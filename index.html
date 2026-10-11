@@ -19,7 +19,7 @@
     font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
     min-height: 100vh;
   }
-  .page { min-height: 100vh; padding: 24px 16px calc(40px + env(safe-area-inset-bottom)); display: flex; justify-content: center; }
+  .page { min-height: 100vh; padding: 24px 16px calc(40px + env(safe-area-inset-bottom)); padding-top: calc(24px + constant(safe-area-inset-top)); padding-top: calc(24px + env(safe-area-inset-top, 0px)); display: flex; justify-content: center; }
   .inner { width: 100%; max-width: 420px; display: flex; flex-direction: column; align-items: center; }
 
   .tabs { margin-top: 18px; display: flex; background: rgba(255,255,255,.1); border-radius: 999px; padding: 4px; }
@@ -254,6 +254,23 @@
     if (toastTimer) clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { el.classList.remove('show'); }, 1600);
   }
+
+  // —— iPhone 灵动岛安全区兜底：独立安装模式下系统未报告顶部安全高度时手动补足 ——
+  (function () {
+    var isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+    var isIOS = /iP(hone|od|ad)/.test(navigator.userAgent);
+    if (!isIOS || !isStandalone) return;
+    var probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;top:0;left:0;visibility:hidden;pointer-events:none;height:env(safe-area-inset-top,0px);height:constant(safe-area-inset-top);';
+    document.body.appendChild(probe);
+    var inset = probe.offsetHeight || 0;
+    document.body.removeChild(probe);
+    if (inset < 20) inset = 62; // 灵动岛机型顶部安全区约 62px，系统未报告时手动兜底
+    var style = document.createElement('style');
+    style.id = 'ios-safe-top';
+    style.textContent = '.page { padding-top: ' + (24 + inset) + 'px !important; }';
+    document.head.appendChild(style);
+  })();
 
   // —— 自定义确认框（替代浏览器 confirm，任何环境下都可靠可见）——
   var confirmOkHandler = null;
