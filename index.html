@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>考场时钟</title>
+<meta name="description" content="广东省考行测 / 申论考场时钟模拟，支持暂停" />
+<meta name="theme-color" content="#16253b" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="icon-180.png" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="考场时钟" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: linear-gradient(180deg, #16253b 0%, #1e3a5f 55%, #2a4d7e 100%);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    min-height: 100vh;
+  }
+  .page { min-height: 100vh; padding: 24px 16px calc(40px + env(safe-area-inset-bottom)); display: flex; justify-content: center; }
+  .inner { width: 100%; max-width: 420px; display: flex; flex-direction: column; align-items: center; }
+
+  .tabs { margin-top: 18px; display: flex; background: rgba(255,255,255,.1); border-radius: 999px; padding: 4px; }
+  .tab { min-width: 88px; text-align: center; padding: 8px 18px; border-radius: 999px; color: rgba(255,255,255,.72); font-size: 15px; cursor: pointer; user-select: none; transition: all .2s; }
+  .tab.active { background: #fff; color: #1e3a5f; font-weight: 700; }
+
+  .clock-card { margin-top: 16px; width: 100%; background: #fff; border-radius: 14px; padding: 20px 14px 18px; box-shadow: 0 9px 25px rgba(0,0,0,.28); transition: box-shadow .3s; }
+  .clock-card.finished { box-shadow: 0 0 0 3px rgba(239,68,68,.45), 0 9px 25px rgba(0,0,0,.28); }
+
+  .clock-face { position: relative; width: 290px; height: 290px; margin: 0 auto; border-radius: 50%; background: #fff; border: 1px solid #e4e8f0; box-shadow: inset 0 0 20px rgba(30,58,95,.08), 0 5px 15px rgba(30,58,95,.12); }
+  .tick { position: absolute; top: 0; left: 50%; width: 1.5px; height: 8px; margin-left: -0.75px; background: #c3cad6; transform-origin: 50% 145px; border-radius: 1px; }
+  .tick.major { width: 3px; height: 15px; margin-left: -1.5px; background: #33415c; }
+  .num { position: absolute; width: 32px; height: 32px; line-height: 32px; text-align: center; font-size: 20px; font-weight: 700; color: #1e3a5f; }
+
+  .hand { position: absolute; left: 50%; bottom: 50%; transform-origin: 50% 100%; border-radius: 4px; transition: transform .12s linear; }
+  .hand.hour { width: 8px; height: 65px; margin-left: -4px; background: #1e3a5f; }
+  .hand.minute { width: 5px; height: 110px; margin-left: -2.5px; background: #33415c; }
+  .hand.second { width: 2px; height: 134px; margin-left: -1px; background: #e5484d; }
+  .hand.paused { opacity: .55; }
+  .cap { position: absolute; left: 50%; top: 50%; width: 17px; height: 17px; margin: -8.5px 0 0 -8.5px; border-radius: 50%; background: #e5484d; border: 3px solid #fff; z-index: 5; }
+
+  .clock-info { margin-top: 15px; text-align: center; }
+  .exam-name { font-size: 18px; font-weight: 700; color: #1e3a5f; }
+
+  .digital { margin-top: 18px; display: flex; }
+  .digital-block { flex: 1; text-align: center; }
+  .digital-label { font-size: 12px; color: #8a94a6; }
+  .digital-value { margin-top: 4px; font-size: 30px; font-weight: 700; font-family: "SF Mono", Menlo, Consolas, monospace; color: #1e3a5f; letter-spacing: 1px; }
+  .remain-normal { color: #2563eb; }
+  .remain-warn { color: #f59e0b; }
+  .remain-danger { color: #ef4444; animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+
+  .progress-track { margin-top: 15px; height: 7px; border-radius: 999px; background: #edf0f6; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 999px; transition: width .15s linear; }
+  .fill-normal { background: linear-gradient(90deg,#2563eb,#3b82f6); }
+  .fill-warn { background: linear-gradient(90deg,#f59e0b,#fbbf24); }
+  .fill-danger { background: linear-gradient(90deg,#ef4444,#f87171); }
+  .progress-text { margin-top: 7px; text-align: center; font-size: 12px; color: #98a2b3; }
+
+  .controls { margin-top: 16px; width: 100%; display: flex; gap: 12px; }
+  .btn { flex: 0 0 110px; height: 48px; line-height: 48px; text-align: center; border-radius: 999px; font-size: 16px; font-weight: 600; cursor: pointer; user-select: none; }
+  .btn-reset { background: rgba(255,255,255,.92); color: #1e3a5f; }
+  .btn-main { flex: 1; background: #2563eb; color: #fff; }
+  .btn-main.pause { background: #f59e0b; }
+  .btn-main.disabled { background: #9aa7b8; cursor: not-allowed; }
+
+  .mask { position: fixed; left: 0; top: 0; right: 0; bottom: 0; background: rgba(10,20,36,.75); display: flex; align-items: center; justify-content: center; z-index: 99; }
+  .mask.hidden { display: none; }
+  .mask-card { width: 280px; background: #fff; border-radius: 14px; padding: 28px 22px 22px; text-align: center; }
+  .mask-title { font-size: 20px; font-weight: 700; color: #1e3a5f; }
+  .mask-desc { margin-top: 8px; font-size: 14px; color: #667085; }
+  .mask-btns { margin-top: 20px; display: flex; gap: 10px; }
+  .mask-btn { flex: 1; height: 42px; line-height: 42px; font-size: 15px; border-radius: 999px; cursor: pointer; }
+  .mask-btn-ghost { background: #eef2f8; color: #1e3a5f; }
+  .mask-btn-primary { background: #2563eb; color: #fff; }
+
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: 80px;
+    transform: translateX(-50%) translateY(20px);
+    background: rgba(10, 20, 36, .85);
+    color: #fff;
+    font-size: 14px;
+    padding: 10px 22px;
+    border-radius: 999px;
+    z-index: 999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .25s, transform .25s;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* 通用确认框（替代浏览器 confirm，任何环境下都可靠可见） */
+  .confirm-mask { position: fixed; left: 0; top: 0; right: 0; bottom: 0; background: rgba(10, 20, 36, .75); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .confirm-mask.hidden { display: none; }
+  .confirm-card { width: 280px; background: #fff; border-radius: 14px; padding: 26px 22px 20px; text-align: center; }
+  .confirm-title { font-size: 18px; font-weight: 700; color: #1e3a5f; }
+  .confirm-desc { margin-top: 8px; font-size: 14px; color: #667085; line-height: 1.6; }
+  .confirm-btns { margin-top: 18px; display: flex; gap: 10px; }
+  .confirm-btn { flex: 1; height: 40px; line-height: 40px; font-size: 14px; border-radius: 999px; cursor: pointer; }
+  .confirm-btn-cancel { background: #eef2f8; color: #1e3a5f; }
+  .confirm-btn-ok { background: #2563eb; color: #fff; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="inner">
+    <div class="tabs">
+      <div class="tab" id="tab-xingce">行测</div>
+      <div class="tab" id="tab-shenlun">申论</div>
+    </div>
+
+    <div class="clock-card" id="card">
+      <div class="clock-face" id="face"></div>
+      <div class="clock-info">
+        <div class="exam-name" id="examName"></div>
+      </div>
+      <div class="digital">
+        <div class="digital-block">
+          <div class="digital-label">模拟时刻</div>
+          <div class="digital-value" id="clockText"></div>
+        </div>
+        <div class="digital-block">
+          <div class="digital-label">剩余时间</div>
+          <div class="digital-value" id="remainText"></div>
+        </div>
+      </div>
+      <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="progress-text" id="progressText"></div>
+    </div>
+
+    <div class="controls">
+      <div class="btn btn-reset" id="btnReset">重置</div>
+      <div class="btn btn-main" id="btnMain">开始</div>
+    </div>
+  </div>
+</div>
+
+<div class="mask hidden" id="mask">
+  <div class="mask-card">
+    <div class="mask-title">考试时间到</div>
+    <div class="mask-desc">请停止作答</div>
+    <div class="mask-btns">
+      <div class="mask-btn mask-btn-ghost" id="btnMaskClose">知道了</div>
+      <div class="mask-btn mask-btn-primary" id="btnMaskRestart">重新开始</div>
+    </div>
+  </div>
+</div>
+
+<!-- 通用确认框（替代浏览器 confirm，任何环境下都可靠可见） -->
+<div class="confirm-mask hidden" id="confirmBox">
+  <div class="confirm-card">
+    <div class="confirm-title" id="confirmTitle"></div>
+    <div class="confirm-desc" id="confirmDesc"></div>
+    <div class="confirm-btns">
+      <div class="confirm-btn confirm-btn-cancel" id="confirmCancel">取消</div>
+      <div class="confirm-btn confirm-btn-ok" id="confirmOk">确定</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  var EXAMS = {
+    xingce: { key: 'xingce', name: '行政职业能力测验', startHour: 14, startMin: 0, durationMs: 90 * 60 * 1000 },
+    shenlun: { key: 'shenlun', name: '申论', startHour: 16, startMin: 15, durationMs: 150 * 60 * 1000 }
+  };
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function fmt(t) { return pad2(Math.floor(t / 3600)) + ':' + pad2(Math.floor(t % 3600 / 60)) + ':' + pad2(t % 60); }
+
+  var face = document.getElementById('face');
+  for (var i = 0; i < 60; i++) {
+    var t = document.createElement('div');
+    t.className = 'tick' + (i % 5 === 0 ? ' major' : '');
+    t.style.transform = 'rotate(' + (i * 6) + 'deg)';
+    face.appendChild(t);
+  }
+  for (var nn = 1; nn <= 12; nn++) {
+    var ang = (nn * 30 - 90) * Math.PI / 180;
+    var n = document.createElement('div');
+    n.className = 'num';
+    n.textContent = nn;
+    n.style.left = (145 + Math.cos(ang) * 108 - 16) + 'px';
+    n.style.top = (145 + Math.sin(ang) * 108 - 16) + 'px';
+    face.appendChild(n);
+  }
+  var hourHand = document.createElement('div'); hourHand.className = 'hand hour'; face.appendChild(hourHand);
+  var minHand = document.createElement('div'); minHand.className = 'hand minute'; face.appendChild(minHand);
+  var secHand = document.createElement('div'); secHand.className = 'hand second'; face.appendChild(secHand);
+  var cap = document.createElement('div'); cap.className = 'cap'; face.appendChild(cap);
+
+  var exam = EXAMS.xingce;
+  var running = false, started = false, finished = false;
+  var elapsed = 0, segStart = Date.now(), timer = null;
+
+  // —— 屏幕常亮：PWA 用 Wake Lock，Electron 桌面版走 IPC ——
+  var wakeLock = null;
+  function requestWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    navigator.wakeLock.request('screen').then(function (l) { wakeLock = l; }).catch(function () {});
+  }
+  function releaseWakeLock() {
+    if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
+  }
+  function keepScreen(on) {
+    if (window.electronIPC) { try { window.electronIPC.send('keep-screen-on', on); } catch (e) {} return; }
+    if (on) requestWakeLock(); else releaseWakeLock();
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && running) keepScreen(true);
+  });
+
+  // —— 结束提示音（Web Audio，iOS / Android / 桌面通用）——
+  var audioCtx = null;
+  function ensureAudio() {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!audioCtx) audioCtx = new AC();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+  function beep() {
+    ensureAudio();
+    if (!audioCtx) return;
+    var t0 = audioCtx.currentTime;
+    [0, 0.35, 0.7].forEach(function (off, i) {
+      var osc = audioCtx.createOscillator();
+      var gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = i === 2 ? 880 : 660;
+      gain.gain.setValueAtTime(0.0001, t0 + off);
+      gain.gain.exponentialRampToValueAtTime(0.5, t0 + off + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + off + 0.3);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(t0 + off);
+      osc.stop(t0 + off + 0.32);
+    });
+  }
+
+  // —— 轻提示（用于"无需重置"等场景的即时反馈）——
+  var toastTimer = null;
+  function toast(msg) {
+    var el = document.getElementById('toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'toast';
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove('show'); }, 1600);
+  }
+
+  // —— 自定义确认框（替代浏览器 confirm，任何环境下都可靠可见）——
+  var confirmOkHandler = null;
+  function askConfirm(title, desc, onOk) {
+    $('confirmTitle').textContent = title;
+    $('confirmDesc').textContent = desc;
+    confirmOkHandler = onOk;
+    $('confirmBox').classList.remove('hidden');
+  }
+  function closeConfirm() {
+    $('confirmBox').classList.add('hidden');
+    confirmOkHandler = null;
+  }
+  $('confirmOk').addEventListener('click', function () {
+    var fn = confirmOkHandler;
+    closeConfirm();
+    if (fn) fn();
+  });
+  $('confirmCancel').addEventListener('click', closeConfirm);
+
+  function $(id) { return document.getElementById(id); }
+  function render() {
+    var ms = running ? elapsed + (Date.now() - segStart) : elapsed;
+    if (ms >= exam.durationMs) {
+      if (!finished) finish();
+      ms = exam.durationMs;
+    }
+    var totalSec = Math.floor(ms / 1000);
+    var clockSec = (exam.startHour * 3600 + exam.startMin * 60 + totalSec) % 86400;
+    var simSec = exam.startHour * 3600 + exam.startMin * 60 + ms / 1000;
+    var remainMs = Math.max(0, exam.durationMs - ms);
+    // 与模拟时刻共用同一个整数秒基准，两者严格同步（消除 ±1 秒时差）
+    var remainSec = Math.max(0, exam.durationMs / 1000 - totalSec);
+    var level = remainMs <= 10 * 60 * 1000 ? 'danger' : (remainMs <= 30 * 60 * 1000 ? 'warn' : 'normal');
+
+    $('clockText').textContent = fmt(clockSec);
+    $('remainText').textContent = fmt(remainSec);
+    $('remainText').className = 'digital-value remain-' + level;
+    $('progressFill').style.width = Math.min(100, ms / exam.durationMs * 100) + '%';
+    $('progressFill').className = 'progress-fill fill-' + level;
+    $('progressText').textContent = finished ? '已结束' : (running ? '进行中' : (started ? '已暂停' : '未开始'));
+    hourHand.style.transform = 'rotate(' + ((simSec / 3600) % 12 * 30) + 'deg)';
+    minHand.style.transform = 'rotate(' + ((simSec / 60) % 60 * 6) + 'deg)';
+    secHand.style.transform = 'rotate(' + (simSec % 60 * 6) + 'deg)';
+    secHand.classList.toggle('paused', !running);
+    $('card').classList.toggle('finished', finished);
+    $('examName').textContent = exam.name;
+    $('btnMain').textContent = finished ? '已结束' : (running ? '暂停' : (started ? '继续' : '开始'));
+    $('btnMain').classList.toggle('pause', running);
+    $('btnMain').classList.toggle('disabled', finished);
+    $('tab-xingce').classList.toggle('active', exam.key === 'xingce');
+    $('tab-shenlun').classList.toggle('active', exam.key === 'shenlun');
+  }
+  function finish() {
+    elapsed = exam.durationMs;
+    running = false;
+    finished = true;
+    stopTimer();
+    keepScreen(false);
+    $('mask').classList.remove('hidden');
+    if (navigator.vibrate) navigator.vibrate([400, 200, 400]);
+    beep();
+  }
+  function startTimer() { stopTimer(); timer = setInterval(render, 100); }
+  function stopTimer() { if (timer) { clearInterval(timer); timer = null; } }
+  function resetToInitial(newExam) {
+    stopTimer();
+    elapsed = 0;
+    segStart = Date.now();
+    running = false;
+    started = false;
+    finished = false;
+    exam = newExam;
+    keepScreen(false);
+    $('mask').classList.add('hidden');
+    render();
+  }
+  function busy() { return started || running || finished; }
+
+  $('btnMain').addEventListener('click', function () {
+    if (finished) return;
+    if (running) {
+      elapsed += Date.now() - segStart;
+      running = false;
+      stopTimer();
+      keepScreen(false);
+    } else {
+      if (!started) { elapsed = 0; started = true; }
+      segStart = Date.now();
+      running = true;
+      startTimer();
+      ensureAudio();   // 借用户点击解锁音频，保证到时提示音能响
+      keepScreen(true);
+    }
+    render();
+  });
+  $('btnReset').addEventListener('click', function () {
+    if (!busy()) { toast('当前未开始，无需重置'); return; }
+    askConfirm('重置计时', '确定要重置当前进度吗？', function () { resetToInitial(exam); });
+  });
+  ['xingce', 'shenlun'].forEach(function (key) {
+    $('tab-' + key).addEventListener('click', function () {
+      if (exam.key === key) { toast('已是当前科目'); return; }
+      if (!busy()) {
+        resetToInitial(EXAMS[key]);
+        return;
+      }
+      askConfirm('切换考试', '切换后当前计时将被重置，确定吗？', function () { resetToInitial(EXAMS[key]); });
+    });
+  });
+  $('btnMaskClose').addEventListener('click', function () { $('mask').classList.add('hidden'); });
+  $('btnMaskRestart').addEventListener('click', function () { resetToInitial(exam); });
+
+  render();
+
+  // —— PWA 离线缓存（Electron 以 file:// 打开时自动跳过）——
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function () {});
+    });
+  }
+</script>
+</body>
+</html>
