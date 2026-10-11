@@ -13,7 +13,7 @@
 
 ## 使用方法
 
-1. 把本目录所有文件使用GitHub Pages进行任意静态托管
+1. 把本目录所有文件使用GitHub Pages进行静态托管
 2. 手机 / 电脑浏览器打开网址
 3. 安卓 Chrome：菜单 → 安装应用；iPhone Safari：分享 → 添加到主屏幕；桌面 Chrome/Edge：地址栏安装图标
 
