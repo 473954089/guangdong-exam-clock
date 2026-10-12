@@ -15,7 +15,8 @@
 
 1. 本应用使用GitHub Pages进行静态托管
 2. 手机 / 电脑浏览器打开网址：https://473954089.github.io/guangdong-exam-clock/
-3. 安卓 Chrome：菜单 → 安装应用；iPhone Safari：分享 → 添加到主屏幕；桌面 Chrome/Edge：地址栏安装图标
+3. 安卓 Chrome：菜单 → 安装应用
+4. iPhone Safari：分享 → 添加到主屏幕；桌面 Chrome/Edge：地址栏安装图标
 
 ## 电脑试运行
 
