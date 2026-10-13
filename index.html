@@ -53,11 +53,12 @@
   .remain-danger { color: #ef4444; animation: pulse 1s ease-in-out infinite; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
 
-  .progress-track { margin-top: 15px; height: 7px; border-radius: 999px; background: #edf0f6; overflow: hidden; }
-  .progress-fill { height: 100%; border-radius: 999px; transition: width .15s linear; }
-  .fill-normal { background: linear-gradient(90deg,#2563eb,#3b82f6); }
-  .fill-warn { background: linear-gradient(90deg,#f59e0b,#fbbf24); }
-  .fill-danger { background: linear-gradient(90deg,#ef4444,#f87171); }
+  .progress-track { margin-top: 16px; }
+  .seek { -webkit-appearance: none; appearance: none; width: 100%; height: 22px; background: transparent; outline: none; cursor: pointer; display: block; }
+  .seek::-webkit-slider-runnable-track { height: 7px; border-radius: 999px; background: var(--seek-bg, #edf0f6); }
+  .seek::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: #fff; border: 5px solid #2563eb; box-shadow: 0 1px 5px rgba(0,0,0,.35); margin-top: -6.5px; }
+  .seek::-moz-range-track { height: 7px; border-radius: 999px; background: var(--seek-bg, #edf0f6); }
+  .seek::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: #fff; border: 5px solid #2563eb; box-shadow: 0 1px 5px rgba(0,0,0,.35); }
   .progress-text { margin-top: 7px; text-align: center; font-size: 12px; color: #98a2b3; }
 
   .controls { margin-top: 16px; width: 100%; display: flex; gap: 12px; }
@@ -129,7 +130,9 @@
           <div class="digital-value" id="remainText"></div>
         </div>
       </div>
-      <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="progress-track">
+        <input type="range" id="seek" class="seek" min="0" max="1000" step="1" value="0" />
+      </div>
       <div class="progress-text" id="progressText"></div>
     </div>
 
@@ -195,6 +198,23 @@
   var exam = EXAMS.xingce;
   var running = false, started = false, finished = false;
   var elapsed = 0, segStart = Date.now(), timer = null;
+  var seeking = false;
+
+  // —— 拖动进度条：暂停计时并定位到任意时间点（方便按时间段练习）——
+  function scrubTo(val) {
+    if (running) {
+      elapsed += Date.now() - segStart;
+      running = false;
+      stopTimer();
+      keepScreen(false);
+    }
+    finished = false;
+    $('mask').classList.add('hidden');
+    elapsed = exam.durationMs * val / 1000;
+    started = true;
+    segStart = Date.now();
+    render();
+  }
 
   // —— 屏幕常亮：PWA 用 Wake Lock，Electron 桌面版走 IPC ——
   var wakeLock = null;
@@ -295,7 +315,7 @@
   function render() {
     var ms = running ? elapsed + (Date.now() - segStart) : elapsed;
     if (ms >= exam.durationMs) {
-      if (!finished) finish();
+      if (running && !finished) finish();   // 仅计时运行中自然到点才提醒；拖动定位到尽头只显示、不提醒
       ms = exam.durationMs;
     }
     var totalSec = Math.floor(ms / 1000);
@@ -309,8 +329,11 @@
     $('clockText').textContent = fmt(clockSec);
     $('remainText').textContent = fmt(remainSec);
     $('remainText').className = 'digital-value remain-' + level;
-    $('progressFill').style.width = Math.min(100, ms / exam.durationMs * 100) + '%';
-    $('progressFill').className = 'progress-fill fill-' + level;
+    var pct = Math.min(100, ms / exam.durationMs * 100);
+    var fillColor = level === 'danger' ? '#ef4444' : (level === 'warn' ? '#f59e0b' : '#2563eb');
+    var seekEl = $('seek');
+    if (!seeking) seekEl.value = Math.min(1000, Math.round(ms / exam.durationMs * 1000));
+    seekEl.style.setProperty('--seek-bg', 'linear-gradient(to right,' + fillColor + ' 0%,' + fillColor + ' ' + pct + '%,#edf0f6 ' + pct + '%,#edf0f6 100%)');
     $('progressText').textContent = finished ? '已结束' : (running ? '进行中' : (started ? '已暂停' : '未开始'));
     hourHand.style.transform = 'rotate(' + ((simSec / 3600) % 12 * 30) + 'deg)';
     minHand.style.transform = 'rotate(' + ((simSec / 60) % 60 * 6) + 'deg)';
@@ -371,6 +394,8 @@
     if (!busy()) { toast('当前未开始，无需重置'); return; }
     askConfirm('重置计时', '确定要重置当前进度吗？', function () { resetToInitial(exam); });
   });
+  $('seek').addEventListener('input', function () { seeking = true; scrubTo(parseInt(this.value, 10) || 0); });
+  $('seek').addEventListener('change', function () { seeking = false; scrubTo(parseInt(this.value, 10) || 0); });
   ['xingce', 'shenlun'].forEach(function (key) {
     $('tab-' + key).addEventListener('click', function () {
       if (exam.key === key) { toast('已是当前科目'); return; }
