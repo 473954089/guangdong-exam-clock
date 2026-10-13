@@ -59,6 +59,10 @@
   .seek::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: #fff; border: 5px solid #2563eb; box-shadow: 0 1px 5px rgba(0,0,0,.35); margin-top: -6.5px; }
   .seek::-moz-range-track { height: 7px; border-radius: 999px; background: var(--seek-bg, #edf0f6); }
   .seek::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: #fff; border: 5px solid #2563eb; box-shadow: 0 1px 5px rgba(0,0,0,.35); }
+
+  .nudge { margin-top: 10px; display: flex; gap: 8px; }
+  .nudge-btn { flex: 1; height: 30px; line-height: 30px; text-align: center; background: #eef2f8; color: #1e3a5f; border-radius: 999px; font-size: 12px; font-weight: 600; cursor: pointer; user-select: none; }
+  .nudge-btn:active { background: #dbe4f0; }
   .progress-text { margin-top: 7px; text-align: center; font-size: 12px; color: #98a2b3; }
 
   .controls { margin-top: 16px; width: 100%; display: flex; gap: 12px; }
@@ -131,7 +135,15 @@
         </div>
       </div>
       <div class="progress-track">
-        <input type="range" id="seek" class="seek" min="0" max="1000" step="1" value="0" />
+        <input type="range" id="seek" class="seek" min="0" max="5400" step="1" value="0" />
+      </div>
+      <div class="nudge">
+        <div class="nudge-btn" data-delta="-60">-1分</div>
+        <div class="nudge-btn" data-delta="-10">-10秒</div>
+        <div class="nudge-btn" data-delta="-1">-1秒</div>
+        <div class="nudge-btn" data-delta="1">+1秒</div>
+        <div class="nudge-btn" data-delta="10">+10秒</div>
+        <div class="nudge-btn" data-delta="60">+1分</div>
       </div>
       <div class="progress-text" id="progressText"></div>
     </div>
@@ -200,7 +212,7 @@
   var elapsed = 0, segStart = Date.now(), timer = null;
   var seeking = false;
 
-  // —— 拖动进度条：暂停计时并定位到任意时间点（方便按时间段练习）——
+  // —— 拖动进度条：暂停计时并定位到任意时间点（val 为秒，1 秒 1 格）——
   function scrubTo(val) {
     if (running) {
       elapsed += Date.now() - segStart;
@@ -210,7 +222,25 @@
     }
     finished = false;
     $('mask').classList.add('hidden');
-    elapsed = exam.durationMs * val / 1000;
+    elapsed = val * 1000;
+    started = true;
+    segStart = Date.now();
+    render();
+  }
+
+  // —— 微调按钮：按秒精确定位（-1分/-10秒/-1秒/+1秒/+10秒/+1分）——
+  function nudge(delta) {
+    if (running) {
+      elapsed += Date.now() - segStart;
+      running = false;
+      stopTimer();
+      keepScreen(false);
+    }
+    finished = false;
+    $('mask').classList.add('hidden');
+    var maxSec = exam.durationMs / 1000;
+    var next = Math.max(0, Math.min(maxSec, Math.floor(elapsed / 1000) + delta));
+    elapsed = next * 1000;
     started = true;
     segStart = Date.now();
     render();
@@ -332,7 +362,7 @@
     var pct = Math.min(100, ms / exam.durationMs * 100);
     var fillColor = level === 'danger' ? '#ef4444' : (level === 'warn' ? '#f59e0b' : '#2563eb');
     var seekEl = $('seek');
-    if (!seeking) seekEl.value = Math.min(1000, Math.round(ms / exam.durationMs * 1000));
+    if (!seeking) seekEl.value = Math.min(seekEl.max, Math.floor(ms / 1000));
     seekEl.style.setProperty('--seek-bg', 'linear-gradient(to right,' + fillColor + ' 0%,' + fillColor + ' ' + pct + '%,#edf0f6 ' + pct + '%,#edf0f6 100%)');
     $('progressText').textContent = finished ? '已结束' : (running ? '进行中' : (started ? '已暂停' : '未开始'));
     hourHand.style.transform = 'rotate(' + ((simSec / 3600) % 12 * 30) + 'deg)';
@@ -367,6 +397,7 @@
     started = false;
     finished = false;
     exam = newExam;
+    $('seek').max = exam.durationMs / 1000;
     keepScreen(false);
     $('mask').classList.add('hidden');
     render();
@@ -394,8 +425,13 @@
     if (!busy()) { toast('当前未开始，无需重置'); return; }
     askConfirm('重置计时', '确定要重置当前进度吗？', function () { resetToInitial(exam); });
   });
-  $('seek').addEventListener('input', function () { seeking = true; scrubTo(parseInt(this.value, 10) || 0); });
-  $('seek').addEventListener('change', function () { seeking = false; scrubTo(parseInt(this.value, 10) || 0); });
+  var seekEl = $('seek');
+  seekEl.max = exam.durationMs / 1000;   // 滑杆按秒计：行测 5400 格 / 申论 9000 格
+  seekEl.addEventListener('input', function () { seeking = true; scrubTo(parseInt(this.value, 10) || 0); });
+  seekEl.addEventListener('change', function () { seeking = false; scrubTo(parseInt(this.value, 10) || 0); });
+  Array.prototype.forEach.call(document.querySelectorAll('.nudge-btn'), function (el) {
+    el.addEventListener('click', function () { nudge(parseInt(el.getAttribute('data-delta'), 10) || 0); });
+  });
   ['xingce', 'shenlun'].forEach(function (key) {
     $('tab-' + key).addEventListener('click', function () {
       if (exam.key === key) { toast('已是当前科目'); return; }
