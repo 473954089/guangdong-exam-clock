@@ -14,11 +14,5 @@
 ## 使用方法
 
 1. 把本目录所有文件传到任意静态托管（GitHub Pages 最简单，免费）
-2. 手机 / 电脑浏览器打开网址
+2. 手机 / 电脑浏览器打开网址：https://473954089.github.io/guangdong-exam-clock/
 3. 安卓 Chrome：菜单 → 安装应用；iPhone Safari：分享 → 添加到主屏幕；桌面 Chrome/Edge：地址栏安装图标
-
-## 电脑上零门槛试运行
-
-直接双击 `index.html` 用浏览器打开即可使用（按 F11 全屏体验最佳）。
-
-详细部署步骤、各平台安装方法、以及 Electron / Android APK / iOS 版本说明，见上级目录《独立应用指南.md》。
