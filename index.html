@@ -39,6 +39,7 @@
   .hand.minute { width: 5px; height: 110px; margin-left: -2.5px; background: #33415c; }
   .hand.second { width: 2px; height: 134px; margin-left: -1px; background: #e5484d; }
   .hand.paused { opacity: .55; }
+  .hand.no-trans { transition: none; }
   .cap { position: absolute; left: 50%; top: 50%; width: 17px; height: 17px; margin: -8.5px 0 0 -8.5px; border-radius: 50%; background: #e5484d; border: 3px solid #fff; z-index: 5; }
 
   .clock-info { margin-top: 15px; text-align: center; }
@@ -54,15 +55,11 @@
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
 
   .progress-track { margin-top: 16px; }
-  .seek { -webkit-appearance: none; appearance: none; width: 100%; height: 22px; background: transparent; outline: none; cursor: pointer; display: block; }
-  .seek::-webkit-slider-runnable-track { height: 7px; border-radius: 999px; background: var(--seek-bg, #edf0f6); }
-  .seek::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: #fff; border: 5px solid #2563eb; box-shadow: 0 1px 5px rgba(0,0,0,.35); margin-top: -6.5px; }
-  .seek::-moz-range-track { height: 7px; border-radius: 999px; background: var(--seek-bg, #edf0f6); }
-  .seek::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: #fff; border: 5px solid #2563eb; box-shadow: 0 1px 5px rgba(0,0,0,.35); }
-
-  .nudge { margin-top: 10px; display: flex; gap: 8px; }
-  .nudge-btn { flex: 1; height: 30px; line-height: 30px; text-align: center; background: #eef2f8; color: #1e3a5f; border-radius: 999px; font-size: 12px; font-weight: 600; cursor: pointer; user-select: none; }
-  .nudge-btn:active { background: #dbe4f0; }
+  .seek { position: relative; width: 100%; height: 26px; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  .seek-track { position: absolute; left: 0; right: 0; top: 50%; height: 7px; margin-top: -3.5px; border-radius: 999px; background: #edf0f6; }
+  .seek-fill { position: absolute; left: 0; top: 50%; height: 7px; margin-top: -3.5px; border-radius: 999px; background: #2563eb; }
+  .seek-thumb { position: absolute; top: 50%; width: 20px; height: 20px; margin-top: -10px; margin-left: -10px; border-radius: 50%; background: #fff; border: 5px solid #2563eb; box-shadow: 0 1px 5px rgba(0,0,0,.35); }
+  .seek-fill, .seek-thumb { transition: none; }
   .progress-text { margin-top: 7px; text-align: center; font-size: 12px; color: #98a2b3; }
 
   .controls { margin-top: 16px; width: 100%; display: flex; gap: 12px; }
@@ -135,15 +132,11 @@
         </div>
       </div>
       <div class="progress-track">
-        <input type="range" id="seek" class="seek" min="0" max="5400" step="1" value="0" />
-      </div>
-      <div class="nudge">
-        <div class="nudge-btn" data-delta="-60">-1分</div>
-        <div class="nudge-btn" data-delta="-10">-10秒</div>
-        <div class="nudge-btn" data-delta="-1">-1秒</div>
-        <div class="nudge-btn" data-delta="1">+1秒</div>
-        <div class="nudge-btn" data-delta="10">+10秒</div>
-        <div class="nudge-btn" data-delta="60">+1分</div>
+        <div class="seek" id="seek">
+          <div class="seek-track"></div>
+          <div class="seek-fill" id="seekFill"></div>
+          <div class="seek-thumb" id="seekThumb"></div>
+        </div>
       </div>
       <div class="progress-text" id="progressText"></div>
     </div>
@@ -210,39 +203,90 @@
   var exam = EXAMS.xingce;
   var running = false, started = false, finished = false;
   var elapsed = 0, segStart = Date.now(), timer = null;
-  var seeking = false;
+  var seekRect = null, isDragging = false, dragMode = 'coarse', jumping = false;
+  var dragStartX = 0, dragStartVal = 0, dragAnchorX = 0, dragAnchorVal = 0;
+  var lastX = 0, lastT = 0, slowMs = 0, dragThumbPct = 0;
 
-  // —— 拖动进度条：暂停计时并定位到任意时间点（val 为秒，1 秒 1 格）——
-  function scrubTo(val) {
-    if (running) {
-      elapsed += Date.now() - segStart;
-      running = false;
-      stopTimer();
-      keepScreen(false);
+  // —— 拖动进度条：快拖全程 1:1 粘手指；慢拖齿轮 1px≈1秒；松手零回弹；拖到尽头即结束 ——
+  function seekPosFromEvent(e) {
+    var t = e.touches && e.touches.length ? e.touches[0] : e;
+    return t.clientX;
+  }
+  function applyDragPos(x, isDown) {
+    var w = seekRect.width || 1;
+    var maxSec = exam.durationMs / 1000;
+    var coarseRatio = maxSec / w;
+    var now = Date.now();
+    var dt = now - lastT || 1;
+    var dx = x - lastX;
+    var speed = Math.abs(dx) / dt;
+    var v;
+    if (dragMode === 'coarse') {
+      if (isDown) {
+        v = dragStartVal;   // 按下时已按点击位置定位
+      } else {
+        if (speed < 0.04 && Math.abs(dx) > 0) { slowMs += dt; } else { slowMs = 0; }
+        if (slowMs > 150 && x > seekRect.left + 1 && x < seekRect.left + w - 1) {
+          // 持续慢拖 → 齿轮精细模式：1px ≈ 1 秒
+          dragMode = 'fine';
+          dragAnchorX = x;
+          dragAnchorVal = dragStartVal + (x - dragStartX) * coarseRatio;
+        }
+        v = dragStartVal + (x - dragStartX) * coarseRatio;
+      }
     }
-    finished = false;
-    $('mask').classList.add('hidden');
-    elapsed = val * 1000;
-    started = true;
-    segStart = Date.now();
+    if (dragMode === 'fine') {
+      if (speed > 0.15 || x <= seekRect.left + 1 || x >= seekRect.left + w - 1) {
+        // 明显加速或到达轨道尽头 → 退出齿轮模式，值立即对齐手指（拖到尽头即结束，松手零回弹）
+        dragMode = 'coarse';
+        dragStartX = x;
+        dragStartVal = Math.max(0, Math.min(w, x - seekRect.left)) * coarseRatio;
+        v = dragStartVal;
+      } else {
+        v = dragAnchorVal + (x - dragAnchorX) * 1; // 齿轮：1px ≈ 1 秒
+      }
+    }
+    lastX = x;
+    lastT = now;
+    var sec = Math.max(0, Math.min(maxSec, Math.round(v)));
+    elapsed = sec * 1000;
+    // 拇指位置：粗调 1:1 粘手指；齿轮模式下跟随时间值（与填充条粘在一起，松手零回弹）
+    dragThumbPct = (dragMode === 'fine')
+      ? Math.min(100, (sec / maxSec) * 100)
+      : Math.max(0, Math.min(100, (x - seekRect.left) / w * 100));
     render();
   }
-
-  // —— 微调按钮：按秒精确定位（-1分/-10秒/-1秒/+1秒/+10秒/+1分）——
-  function nudge(delta) {
-    if (running) {
-      elapsed += Date.now() - segStart;
-      running = false;
-      stopTimer();
-      keepScreen(false);
-    }
+  function onSeekDown(e) {
+    if (e.cancelable) e.preventDefault();
+    seekRect = seekEl.getBoundingClientRect();
+    isDragging = true;
+    dragMode = 'coarse';
+    slowMs = 0;
+    jumping = true;   // 拖动期间指针瞬时跟随，不做过渡动画
+    var x = seekPosFromEvent(e);
+    if (running) { elapsed += Date.now() - segStart; running = false; stopTimer(); keepScreen(false); }
     finished = false;
     $('mask').classList.add('hidden');
-    var maxSec = exam.durationMs / 1000;
-    var next = Math.max(0, Math.min(maxSec, Math.floor(elapsed / 1000) + delta));
-    elapsed = next * 1000;
     started = true;
-    segStart = Date.now();
+    var pct0 = Math.max(0, Math.min(1, (x - seekRect.left) / (seekRect.width || 1)));
+    dragStartVal = Math.round(pct0 * (exam.durationMs / 1000));
+    dragStartX = x;
+    lastX = x;
+    lastT = Date.now();
+    applyDragPos(x, true);
+  }
+  function onSeekMove(e) {
+    if (!isDragging) return;
+    if (e.cancelable) e.preventDefault();
+    applyDragPos(seekPosFromEvent(e), false);
+  }
+  function onSeekUp() {
+    if (!isDragging) return;
+    isDragging = false;
+    jumping = false;
+    secHand.classList.remove('no-trans');
+    minHand.classList.remove('no-trans');
+    hourHand.classList.remove('no-trans');
     render();
   }
 
@@ -354,20 +398,28 @@
     var remainMs = Math.max(0, exam.durationMs - ms);
     // 与模拟时刻共用同一个整数秒基准，两者严格同步（消除 ±1 秒时差）
     var remainSec = Math.max(0, exam.durationMs / 1000 - totalSec);
-    var level = remainMs <= 10 * 60 * 1000 ? 'danger' : (remainMs <= 30 * 60 * 1000 ? 'warn' : 'normal');
+    var level = remainMs <= 5 * 60 * 1000 ? 'danger' : (remainMs <= 15 * 60 * 1000 ? 'warn' : 'normal');
 
     $('clockText').textContent = fmt(clockSec);
     $('remainText').textContent = fmt(remainSec);
     $('remainText').className = 'digital-value remain-' + level;
     var pct = Math.min(100, ms / exam.durationMs * 100);
     var fillColor = level === 'danger' ? '#ef4444' : (level === 'warn' ? '#f59e0b' : '#2563eb');
-    var seekEl = $('seek');
-    if (!seeking) seekEl.value = Math.min(seekEl.max, Math.floor(ms / 1000));
-    seekEl.style.setProperty('--seek-bg', 'linear-gradient(to right,' + fillColor + ' 0%,' + fillColor + ' ' + pct + '%,#edf0f6 ' + pct + '%,#edf0f6 100%)');
+    // 拖动中填充条与拇指一起 1:1 跟随手指/鼠标（不分离）；松手后一起回落到真实进度
+    var showPct = isDragging ? dragThumbPct : pct;
+    $('seekFill').style.width = showPct + '%';
+    $('seekFill').style.background = fillColor;
+    $('seekThumb').style.left = showPct + '%';
     $('progressText').textContent = finished ? '已结束' : (running ? '进行中' : (started ? '已暂停' : '未开始'));
-    hourHand.style.transform = 'rotate(' + ((simSec / 3600) % 12 * 30) + 'deg)';
-    minHand.style.transform = 'rotate(' + ((simSec / 60) % 60 * 6) + 'deg)';
-    secHand.style.transform = 'rotate(' + (simSec % 60 * 6) + 'deg)';
+    if (jumping) {
+      secHand.classList.add('no-trans');
+      minHand.classList.add('no-trans');
+      hourHand.classList.add('no-trans');
+    }
+    // 累计角度不取余：跨越 360° 时指针顺时针自然衔接，不再逆时针回旋
+    hourHand.style.transform = 'rotate(' + (simSec / 120) + 'deg)';
+    minHand.style.transform = 'rotate(' + (simSec / 10) + 'deg)';
+    secHand.style.transform = 'rotate(' + (simSec * 6) + 'deg)';
     secHand.classList.toggle('paused', !running);
     $('card').classList.toggle('finished', finished);
     $('examName').textContent = exam.name;
@@ -397,10 +449,14 @@
     started = false;
     finished = false;
     exam = newExam;
-    $('seek').max = exam.durationMs / 1000;
     keepScreen(false);
     $('mask').classList.add('hidden');
+    jumping = true;   // 重置瞬间指针直接跳转，避免大角度回旋动画
     render();
+    jumping = false;
+    secHand.classList.remove('no-trans');
+    minHand.classList.remove('no-trans');
+    hourHand.classList.remove('no-trans');
   }
   function busy() { return started || running || finished; }
 
@@ -426,12 +482,19 @@
     askConfirm('重置计时', '确定要重置当前进度吗？', function () { resetToInitial(exam); });
   });
   var seekEl = $('seek');
-  seekEl.max = exam.durationMs / 1000;   // 滑杆按秒计：行测 5400 格 / 申论 9000 格
-  seekEl.addEventListener('input', function () { seeking = true; scrubTo(parseInt(this.value, 10) || 0); });
-  seekEl.addEventListener('change', function () { seeking = false; scrubTo(parseInt(this.value, 10) || 0); });
-  Array.prototype.forEach.call(document.querySelectorAll('.nudge-btn'), function (el) {
-    el.addEventListener('click', function () { nudge(parseInt(el.getAttribute('data-delta'), 10) || 0); });
-  });
+  if (window.PointerEvent) {
+    seekEl.addEventListener('pointerdown', onSeekDown);
+    window.addEventListener('pointermove', onSeekMove);
+    window.addEventListener('pointerup', onSeekUp);
+    window.addEventListener('pointercancel', onSeekUp);
+  } else {
+    seekEl.addEventListener('touchstart', onSeekDown, { passive: false });
+    window.addEventListener('touchmove', onSeekMove, { passive: false });
+    window.addEventListener('touchend', onSeekUp);
+    seekEl.addEventListener('mousedown', onSeekDown);
+    window.addEventListener('mousemove', onSeekMove);
+    window.addEventListener('mouseup', onSeekUp);
+  }
   ['xingce', 'shenlun'].forEach(function (key) {
     $('tab-' + key).addEventListener('click', function () {
       if (exam.key === key) { toast('已是当前科目'); return; }
