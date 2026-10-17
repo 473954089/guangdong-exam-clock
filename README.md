@@ -6,5 +6,5 @@
 ## 使用方法
 
 1. 把本目录所有文件传到任意静态托管（GitHub Pages 最简单，免费）
-2. 手机 / 电脑浏览器打开网址：https://473954089.github.io/guangdong-exam-clock/
+2. 手机 / 电脑浏览器打开对应的GitHub网址（试用）：https://473954089.github.io/guangdong-exam-clock/
 3. 安卓 Chrome：菜单 → 安装应用；iPhone Safari：分享 → 添加到主屏幕；桌面 Chrome/Edge：地址栏安装图标
